@@ -1,22 +1,19 @@
-#version 450
-
-struct VsOutput
-{
-  vec3 EyespaceNormal;
-  vec3 WorldPosition;
-  vec2 UV;
-};
+#version 330
 
 uniform vec3 CameraPosition;
 uniform vec3 LightDirection;
 uniform vec3 AmbientLight;
 uniform vec3 SunLight;
 
-in VsOutput vsOutput;
-in vec3 boneColors;
-out vec4 FragColor;
+struct VsOutput
+{
+  vec3 EyespaceNormal;
+  vec3 WorldPosition;
+  vec3 Color;
+};
 
-uniform sampler2D mainTex;
+in VsOutput vsOutput;
+out vec4 FragColor;
 
 vec3 LightedColor(
   vec3 color,
@@ -34,14 +31,12 @@ vec3 LightedColor(
   sf = pow(sf, shininess);
   return color * (AmbientLight + df * SunLight) + vec3(1,1,1) * sf * metallness;
 }
-
 void main()
 {
-  float shininess = 1.3;
-  float metallness = 0.4;
-  vec3 color = texture(mainTex, vsOutput.UV).rgb ;
-  color = LightedColor(color, shininess, metallness, vsOutput.WorldPosition, vsOutput.EyespaceNormal, LightDirection, CameraPosition);
-
-  color = boneColors;
+  float shininess = 40;
+  float metallness = 0;
+  vec3 color = LightedColor(vsOutput.Color, shininess, metallness,
+    vsOutput.WorldPosition, vsOutput.EyespaceNormal, LightDirection, CameraPosition);
+  color = vsOutput.Color;
   FragColor = vec4(color, 1.0);
 }

@@ -2,6 +2,7 @@
 #include <render/direction_light.h>
 #include <render/material.h>
 #include <render/mesh.h>
+#include <render/debug_arrow.h>
 #include "camera.h"
 #include <application.h>
 
@@ -67,6 +68,9 @@ void game_init()
     load_mesh(ROOT_PATH"resources/MotusMan_v55/MotusMan_v55.fbx", 0),
     std::move(material)
   });
+
+  create_arrow_render();
+
   std::fflush(stdout);
 }
 
@@ -94,6 +98,16 @@ void render_character(const Character &character, const mat4 &cameraProjView, ve
   shader.set_vec3("SunLight", light.lightColor);
 
   render(character.mesh);
+
+  for (const auto& bone : character.mesh->bones)
+  {
+      const auto& parent = character.mesh->bones[bone.parentIndex];
+      float distance = glm::length(parent.bindPose[3] - bone.bindPose[3]);
+      draw_arrow(bone.bindPose, vec3(0), vec3(0.01f, 0, 0), vec3(1, 0, 0), 0.01f);
+      draw_arrow(bone.bindPose, vec3(0), vec3(0, 0.01f, 0), vec3(0, 1, 0), 0.01f);
+      draw_arrow(bone.bindPose, vec3(0), vec3(0, 0, 0.01f), vec3(0, 0, 1), 0.01f);
+      draw_arrow(parent.bindPose[3], bone.bindPose[3], vec3(1, 1, 1), 0.01f);
+  }
 }
 
 void game_render()
@@ -109,6 +123,10 @@ void game_render()
   const glm::mat4 &transform = scene->userCamera.transform;
   mat4 projView = projection * inverse(transform);
 
-  for (const Character &character : scene->characters)
-    render_character(character, projView, glm::vec3(transform[3]), scene->light);
+  for (const Character& character : scene->characters)
+  {
+      render_character(character, projView, glm::vec3(transform[3]), scene->light);
+  }
+
+  render_arrows(projView, glm::vec3(transform[3]), scene->light);
 }

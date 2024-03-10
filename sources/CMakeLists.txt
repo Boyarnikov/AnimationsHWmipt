@@ -9,7 +9,7 @@ project(${EXE_NAME})
 
 set(SRC_ROOT ${CMAKE_SOURCE_DIR})
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_FLAGS "/w /Zi")
 #set(CMAKE_CXX_FLAGS "/Wall /Zi")
 # TODO: translate all warning exclustions to msvc (/WdXXXX)
