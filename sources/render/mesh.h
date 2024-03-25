@@ -4,7 +4,7 @@
 #include <string>
 #include <vector>
 #include <3dmath.h>
-
+#include "skeleton.h"
 
 struct Mesh
 {
@@ -18,6 +18,7 @@ struct Mesh
         std::string name;
         glm::mat4x4 bindPose, invBindPose;
     };
+    std::map<std::string, int> boneNamesMap;
 
     std::vector<Bone> bones;
 

@@ -2,9 +2,11 @@
 #include <render/direction_light.h>
 #include <render/material.h>
 #include <render/mesh.h>
+#include <render/scene.h>
 #include <render/debug_arrow.h>
 #include "camera.h"
 #include <application.h>
+
 
 struct UserCamera
 {
@@ -18,6 +20,7 @@ struct Character
   glm::mat4 transform;
   MeshPtr mesh;
   MaterialPtr material;
+  RuntimeSkeleton skeleton;
 };
 
 struct Scene
@@ -62,12 +65,12 @@ void game_init()
   auto material = make_material("character", ROOT_PATH"sources/shaders/character_vs.glsl", ROOT_PATH"sources/shaders/character_ps.glsl");
   std::fflush(stdout);
   material->set_property("mainTex", create_texture2d(ROOT_PATH"resources/MotusMan_v55/MCG_diff.jpg"));
-
+  SceneAsset sceneAsset = load_scene(ROOT_PATH"resources/MotusMan_v55/MotusMan_v55.fbx", SceneAsset::LoadScene::Meshes | SceneAsset::LoadScene::Skeleton);
   scene->characters.emplace_back(Character{
     glm::identity<glm::mat4>(),
-    load_mesh(ROOT_PATH"resources/MotusMan_v55/MotusMan_v55.fbx", 0),
-    std::move(material)
-  });
+    sceneAsset.meshes[0],
+    std::move(material), 
+    RuntimeSkeleton(sceneAsset.skeleton) });
 
   create_arrow_render();
 
@@ -97,17 +100,49 @@ void render_character(const Character &character, const mat4 &cameraProjView, ve
   shader.set_vec3("AmbientLight", light.ambient);
   shader.set_vec3("SunLight", light.lightColor);
 
+  size_t boneNumber = character.mesh->bones.size();
+  std::vector<mat4> bones(boneNumber);
+
+  const RuntimeSkeleton& skeleton = character.skeleton;
+  size_t nodeCount = skeleton.ref->nodeCount;
+
+  for (size_t i = 0; i < nodeCount; i++)
+  {
+      auto it = character.mesh->boneNamesMap.find(skeleton.ref->names[i]);
+      if (it != character.mesh->boneNamesMap.end())
+      {
+          int boneIdx = it->second;
+          bones[boneIdx] = skeleton.globalTm[i] * character.mesh->bones[boneIdx].invBindPose;
+      }
+  }
+  shader.set_mat4x4("Bones", bones);
+
+
   render(character.mesh);
 
-  for (const auto& bone : character.mesh->bones)
+  for (size_t i = 2; i < nodeCount; i++)
   {
-      const auto& parent = character.mesh->bones[bone.parentIndex];
-      float distance = glm::length(parent.bindPose[3] - bone.bindPose[3]);
-      draw_arrow(bone.bindPose, vec3(0), vec3(0.01f, 0, 0), vec3(1, 0, 0), 0.01f);
-      draw_arrow(bone.bindPose, vec3(0), vec3(0, 0.01f, 0), vec3(0, 1, 0), 0.01f);
-      draw_arrow(bone.bindPose, vec3(0), vec3(0, 0, 0.01f), vec3(0, 0, 1), 0.01f);
-      draw_arrow(parent.bindPose[3], bone.bindPose[3], vec3(1, 1, 1), 0.01f);
+      glm::vec3 offset{ 0,0,0 };
+      for (size_t j = i; j < nodeCount; j++)
+      {
+          if (skeleton.ref->parent[j] == int(i))
+          {
+              offset = glm::vec3(skeleton.localTm[j][3]);
+              draw_arrow(skeleton.globalTm[i], vec3(0), offset, vec3(1.0f, 1.0f, 1.0f), 0.01f);
+          }
+      }
   }
+
+  //for (const auto& bone : character.mesh->bones)
+  //{
+  //    const auto& parent = character.mesh->bones[bone.parentIndex];
+  //    float distance = glm::length(parent.bindPose[3] - bone.bindPose[3]);
+  //    draw_arrow(bone.bindPose, vec3(0), vec3(0.01f, 0, 0), vec3(1, 0, 0), 0.01f);
+  //    draw_arrow(bone.bindPose, vec3(0), vec3(0, 0.01f, 0), vec3(0, 1, 0), 0.01f);
+  //    draw_arrow(bone.bindPose, vec3(0), vec3(0, 0, 0.01f), vec3(0, 0, 1), 0.01f);
+  //    draw_arrow(parent.bindPose[3], bone.bindPose[3], vec3(1, 1, 1), 0.01f);
+  //}
+
 }
 
 void game_render()
@@ -123,8 +158,14 @@ void game_render()
   const glm::mat4 &transform = scene->userCamera.transform;
   mat4 projView = projection * inverse(transform);
 
-  for (const Character& character : scene->characters)
+  for (Character& character : scene->characters)
   {
+      character.skeleton.updateLocalTransforms();
+      character.skeleton.globalTm[2] = glm::translate(character.skeleton.globalTm[2], glm::vec3(0.0f, 0.05 * sin(get_time()), 0.0f));
+      character.skeleton.globalTm[3] = glm::translate(character.skeleton.globalTm[3], glm::vec3(0.0f, 0.05 * sin(get_time()), 0.0f));
+      character.skeleton.globalTm[4] = glm::translate(character.skeleton.globalTm[4], glm::vec3(0.0f, 0.05 * sin(get_time()), 0.0f));
+      character.skeleton.globalTm[5] = glm::translate(character.skeleton.globalTm[5], glm::vec3(0.0f, 0.05 * sin(get_time()), 0.0f));
+      character.skeleton.globalTm[61] = glm::scale(character.skeleton.globalTm[61], glm::vec3(2.0f + sin(get_time()), 2.0f + sin(get_time()), 2.0f + sin(get_time())));
       render_character(character, projView, glm::vec3(transform[3]), scene->light);
   }
 

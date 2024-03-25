@@ -1,7 +1,8 @@
 {
   "ExpandedNodes": [
-    ""
+    "",
+    "\\LibsStorage",
+    "\\resources"
   ],
-  "SelectedNode": "\\C:\\Users\\MSI\\Desktop\\Study\\AnimationsHWmipt_PKiyashko\\sources\\CMakeLists.txt\\animations.exe\\C:\\Users\\MSI\\Desktop\\Study\\AnimationsHWmipt_PKiyashko\\sources\\render\\texture2d.cpp",
   "PreviewInSolutionExplorer": false
 }
