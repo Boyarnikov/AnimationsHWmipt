@@ -32,7 +32,7 @@ void arccam_mouse_click_handler(
   const SDL_MouseButtonEvent &e,
   ArcballCamera &arcballCamera)
 {
-  if (e.button == SDL_BUTTON_LEFT)
+  if (e.button == SDL_BUTTON_RIGHT)
   {
     arcballCamera.rotationEnable = e.type == SDL_MOUSEBUTTONDOWN;
   }

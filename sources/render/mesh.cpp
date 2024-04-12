@@ -7,7 +7,6 @@
 #include <log.h>
 #include "glad/glad.h"
 
-SkeletonPtr load_skeleton(const aiNode* node);
 
 static void create_indices(const std::vector<unsigned int> &indices)
 {

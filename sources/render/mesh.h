@@ -4,7 +4,6 @@
 #include <string>
 #include <vector>
 #include <3dmath.h>
-#include "skeleton.h"
 
 struct Mesh
 {

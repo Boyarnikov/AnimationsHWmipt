@@ -1,12 +1,24 @@
 #pragma once
 
 #include "mesh.h"
-#include "skeleton.h"
+
+namespace ozz
+{
+    namespace animation
+    {
+        class Skeleton;
+        class Animation;
+    }
+}
+
+using SkeletonPtr = std::shared_ptr<ozz::animation::Skeleton>;
+using AnimationPtr = std::shared_ptr<ozz::animation::Animation>;
 
 struct SceneAsset
 {
     std::vector<MeshPtr> meshes;
     SkeletonPtr skeleton;
+    std::vector<AnimationPtr> animations;
     enum LoadScene
     {
         Meshes = 1 << 0,

@@ -43,3 +43,9 @@ build.ninja
 
 FileContentIndex/
 v17/
+
+Builds
+resources
+Tools
+3rd_party
+imgui.ini

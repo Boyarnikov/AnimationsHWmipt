@@ -7,10 +7,13 @@
   },
   "ExpandedNodes": [
     "",
+    "\\3rd_party",
+    "\\3rd_party\\imgui",
     "\\engine",
     "\\main",
     "\\render",
     "\\shaders"
   ],
+  "SelectedNode": "\\render\\scene.cpp",
   "PreviewInSolutionExplorer": false
 }

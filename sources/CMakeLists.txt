@@ -10,7 +10,7 @@ project(${EXE_NAME})
 set(SRC_ROOT ${CMAKE_SOURCE_DIR})
 
 set(CMAKE_CXX_STANDARD 20)
-set(CMAKE_CXX_FLAGS "/w /Zi")
+set(CMAKE_CXX_FLAGS "/w /Zi /EHsc")
 #set(CMAKE_CXX_FLAGS "/Wall /Zi")
 # TODO: translate all warning exclustions to msvc (/WdXXXX)
 #set(CMAKE_CXX_FLAGS "-m64 -Wall -Wextra -Wno-pragma-pack -Wno-deprecated-declarations -Wno-deprecated-copy -g")
@@ -57,6 +57,20 @@ add_folder(render)
 add_folder(engine)
 add_folder(3rd_party/imgui)
 
+SET(ozz_build_tools OFF CACHE BOOL "" FORCE)
+SET(ozz_build_fbx OFF CACHE BOOL "" FORCE)
+SET(ozz_build_gltf OFF CACHE BOOL "" FORCE)
+SET(ozz_build_samples OFF CACHE BOOL "" FORCE)
+SET(ozz_build_howtos OFF CACHE BOOL "" FORCE)
+SET(ozz_build_tests OFF CACHE BOOL "" FORCE)
+SET(ozz_build_postfix OFF CACHE BOOL "" FORCE)
+add_subdirectory(3rd_party/ozz)
+include_directories(3rd_party/ozz/include)
+
+set(ADDITIONAL_LIBS ${ADDITIONAL_LIBS}
+  ozz_geometry
+  ozz_animation_offline
+  ozz_options)
 set(EXE_SOURCES ${EXE_SOURCES} ${SRC_ROOT}/3rd_party/glad/glad.c)
 
 include_directories(${SRC_ROOT})
