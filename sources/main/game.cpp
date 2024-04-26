@@ -79,6 +79,8 @@ struct Character
   bool pause = false;
   bool loop = true;
   float animPLaybackSpeed = 1.0f;
+
+  float blendRatio = 0.0f;
 };
 
 struct Scene
@@ -175,34 +177,54 @@ void game_update()
     get_delta_time());
   for (Character& character : scene->characters)
   {
-      if (!character.layers.empty())
+      if (character.layers.size() > 1)
       {
-          for (AnimationLayer& layer : character.layers)
+          float numIntervals = character.layers.size() - 1;
+          float interval = 1.f / numIntervals;
+
+          const int relevantLayer =
+              static_cast<int>((character.blendRatio - 1e-3f) * (character.layers.size() - 1));
+       
+          AnimationLayer& layerL = character.layers[relevantLayer];
+          AnimationLayer& layerR = character.layers[relevantLayer + 1];
+
+          const float loop_duration =
+              layerL.animation->duration() * layerL.weight +
+              layerR.animation->duration() * layerR.weight;
+
+          const float inv_loop_duration = 1.f / loop_duration;
+
+          for (int i = 0; i < character.layers.size(); i++)
           {
-              if (!layer.pause)
+              float med = i * interval;
+              float x = character.blendRatio - med;
+              float y = ((x < 0.f ? x : -x) + interval) * numIntervals;
+              character.layers[i].weight = std::max(0.f, y);
+              character.layers[i].animPLaybackSpeed = character.layers[i].animation->duration() * inv_loop_duration;
+              if (!character.layers[i].pause)
               {
-                  if (layer.loop)
+                  if (character.layers[i].loop)
                   {
-                      if (layer.animPLaybackSpeed < 0)
+                      if (character.layers[i].animPLaybackSpeed < 0)
                       {
-                          if (layer.ratio < 0)
-                              layer.ratio = 1.0f;
+                          if (character.layers[i].ratio < 0)
+                              character.layers[i].ratio = 1.0f;
                       }
                       else
                       {
-                          if (layer.ratio >= 1.0f)
-                              layer.ratio = 0.0f;
+                          if (character.layers[i].ratio >= 1.0f)
+                              character.layers[i].ratio = 0.0f;
                       }
                   }
-                  layer.ratio += get_delta_time() * layer.animPLaybackSpeed / layer.animation->duration();
+                  character.layers[i].ratio += get_delta_time() * character.layers[i].animPLaybackSpeed / character.layers[i].animation->duration();
               }
 
               // Samples optimized animation at t = animation_time_.
               ozz::animation::SamplingJob sampling_job;
-              sampling_job.animation = layer.animation.get();
-              sampling_job.context = layer.context.get();
-              sampling_job.ratio = layer.ratio;
-              sampling_job.output = ozz::make_span(layer.locals);
+              sampling_job.animation = character.layers[i].animation.get();
+              sampling_job.context = character.layers[i].context.get();
+              sampling_job.ratio = character.layers[i].ratio;
+              sampling_job.output = ozz::make_span(character.layers[i].locals);
               if (!sampling_job.Run())
               {
                   debug_error("sampling_job failed");
@@ -334,34 +356,21 @@ void render_character(const Character &character, const mat4 &cameraProjView, ve
 
   render(character.mesh);
 
-  //for (size_t i = 2; i < nodeCount; i++)
+  //for (size_t i = 0; i < nodeCount; i++)
   //{
-  //    glm::vec3 offset{ 0,0,0 };
   //    for (size_t j = i; j < nodeCount; j++)
   //    {
-  //        if (skeleton.ref->parent[j] == int(i))
+  //        if (skeleton.joint_parents()[j] == int(i))
   //        {
-  //            offset = glm::vec3(skeleton.localTm[j][3]);
-  //            draw_arrow(skeleton.globalTm[i], vec3(0), offset, vec3(1.0f, 1.0f, 1.0f), 0.01f);
+  //            alignas(16) glm::vec3 offset;
+  //            ozz::math::Store3Ptr(character.models_[i].cols[3] - character.models_[j].cols[3], glm::value_ptr(offset));
+
+  //            glm::mat4 globTm = to_glm(character.models_[j]);
+  //            offset = inverse(globTm) * glm::vec4(offset, .0f);
+  //            draw_arrow(character.transform * to_glm(character.models_[j]), vec3(0), offset, vec3(1.0f, 1.0f, 1.0f), 0.01f);
   //        }
   //    }
   //}
-
-  for (size_t i = 0; i < nodeCount; i++)
-  {
-      for (size_t j = i; j < nodeCount; j++)
-      {
-          if (skeleton.joint_parents()[j] == int(i))
-          {
-              alignas(16) glm::vec3 offset;
-              ozz::math::Store3Ptr(character.models_[i].cols[3] - character.models_[j].cols[3], glm::value_ptr(offset));
-
-              glm::mat4 globTm = to_glm(character.models_[j]);
-              offset = inverse(globTm) * glm::vec4(offset, .0f);
-              draw_arrow(character.transform * to_glm(character.models_[j]), vec3(0), offset, vec3(0, 0.5f, 0), 0.01f);
-          }
-      }
-  }
 }
 
 void render_imguizmo(ImGuizmo::OPERATION& mCurrentGizmoOperation, ImGuizmo::MODE& mCurrentGizmoMode)
@@ -418,40 +427,9 @@ void imgui_render()
     ImGuizmo::BeginFrame();
     for (Character& character : scene->characters)
     {
-         const auto &skeleton = *character.skeleton_;
-         size_t nodeCount = skeleton.num_joints();
-
-         if (ImGui::Begin("Skeleton view"))
-         {
-           for (size_t i = 0; i < nodeCount; i++)
-           {
-             ImGui::Text("%d) %s", int(i), skeleton.joint_names()[i]);
-           }
-         }
-         ImGui::End();
-
-        if (ImGui::Begin("Animation list"))
+        if (ImGui::Begin("BlendTree1D"))
         {
-            if (ImGui::Button("Play animation"))
-                ImGui::OpenPopup("Select animation to play");
-            if (ImGui::BeginPopup("Select animation to play"))
-            {
-                if (AnimationPtr animation = animation_list_combo())
-                {
-                    character.currentAnimation = animation;
-                    ImGui::CloseCurrentPopup();
-                }
-                ImGui::EndPopup();
-            }
-            if (ImGui::TreeNode("controller"))
-            {
-                ImGui::SliderFloat("Animation time", &character.ratio, 0.0f, 1.0f);
-                ImGui::Checkbox("Pause", &character.pause);
-                ImGui::Checkbox("Loop", &character.loop);
-                ImGui::SliderFloat("Playback speed", &character.animPLaybackSpeed, -3.0f, 3.0f);
-                ImGui::TreePop();
-            }
-
+            ImGui::SliderFloat("Blend ratio", &character.blendRatio, 0.0f, 1.0f);
             if (ImGui::Button("Add layer"))
                 ImGui::OpenPopup("Add layer to play");
             if (ImGui::BeginPopup("Add layer to play"))
@@ -484,23 +462,6 @@ void imgui_render()
         }
 
         ImGui::End();
-
-
-        static ImGuizmo::OPERATION mCurrentGizmoOperation(ImGuizmo::TRANSLATE);
-        static ImGuizmo::MODE mCurrentGizmoMode(ImGuizmo::WORLD);
-        render_imguizmo(mCurrentGizmoOperation, mCurrentGizmoMode);
-        const glm::mat4& projection = scene->userCamera.projection;
-        const glm::mat4& transform = scene->userCamera.transform;
-        mat4 cameraView = inverse(transform);
-        ImGuiIO& io = ImGui::GetIO();
-        ImGuizmo::SetRect(0, 0, io.DisplaySize.x, io.DisplaySize.y);
-
-        glm::mat4 globNodeTm = character.transform;
-
-        ImGuizmo::Manipulate(glm::value_ptr(cameraView), glm::value_ptr(projection), mCurrentGizmoOperation, mCurrentGizmoMode,
-            glm::value_ptr(globNodeTm));
-
-        character.transform = globNodeTm;
 
         break;
     }
