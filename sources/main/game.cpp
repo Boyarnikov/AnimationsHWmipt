@@ -13,6 +13,7 @@
 #include "ozz/animation/runtime/local_to_model_job.h"
 #include "ozz/animation/runtime/sampling_job.h"
 #include "ozz/animation/runtime/skeleton.h"
+#include "ozz/animation/runtime/blending_job.h"
 #include "ozz/base/maths/simd_math.h"
 #include "ozz/base/maths/soa_transform.h"
 
@@ -22,6 +23,37 @@ struct UserCamera
   mat4x4 projection;
   ArcballCamera arcballCamera;
 };
+
+struct AnimationLayer
+{
+    // Constructor, default initialization.
+    AnimationLayer(const SkeletonPtr& skeleton, AnimationPtr animation) : weight(1.f), animation(animation)
+    {
+        locals.resize(skeleton->num_soa_joints());
+
+        // Allocates a context that matches animation requirements.
+        context = std::make_shared<ozz::animation::SamplingJob::Context>(skeleton->num_joints());
+    }
+
+    // Playback animation parameters
+    float ratio = 0;
+    bool pause = false;
+    bool loop = true;
+    float animPLaybackSpeed = 1.0f;
+
+    // Blending weight for the layer.
+    float weight;
+
+    // Runtime animation.
+    AnimationPtr animation;
+
+    // Sampling context.
+    std::shared_ptr<ozz::animation::SamplingJob::Context> context;
+
+    // Buffer of local transforms as sampled from animation_.
+    std::vector<ozz::math::SoaTransform> locals;
+};
+
 
 struct Character
 {
@@ -40,8 +72,10 @@ struct Character
   // Buffer of model space matrices.
   std::vector<ozz::math::Float4x4> models_;
 
+  std::vector<AnimationLayer> layers;
+
   AnimationPtr currentAnimation;
-  float animTime = 0;
+  float ratio = 0;
   bool pause = false;
   bool loop = true;
   float animPLaybackSpeed = 1.0f;
@@ -141,7 +175,65 @@ void game_update()
     get_delta_time());
   for (Character& character : scene->characters)
   {
-      if (character.currentAnimation)
+      if (!character.layers.empty())
+      {
+          for (AnimationLayer& layer : character.layers)
+          {
+              if (!layer.pause)
+              {
+                  if (layer.loop)
+                  {
+                      if (layer.animPLaybackSpeed < 0)
+                      {
+                          if (layer.ratio < 0)
+                              layer.ratio = 1.0f;
+                      }
+                      else
+                      {
+                          if (layer.ratio >= 1.0f)
+                              layer.ratio = 0.0f;
+                      }
+                  }
+                  layer.ratio += get_delta_time() * layer.animPLaybackSpeed / layer.animation->duration();
+              }
+
+              // Samples optimized animation at t = animation_time_.
+              ozz::animation::SamplingJob sampling_job;
+              sampling_job.animation = layer.animation.get();
+              sampling_job.context = layer.context.get();
+              sampling_job.ratio = layer.ratio;
+              sampling_job.output = ozz::make_span(layer.locals);
+              if (!sampling_job.Run())
+              {
+                  debug_error("sampling_job failed");
+              }
+          }
+
+          // Prepares blending layers.
+          int numLayer = character.layers.size();
+          std::vector<ozz::animation::BlendingJob::Layer> layers(numLayer);
+
+          for (int i = 0; i < numLayer; ++i)
+          {
+              layers[i].transform = ozz::make_span(character.layers[i].locals);
+              layers[i].weight = character.layers[i].weight;
+          }
+
+          // Setups blending job.
+          ozz::animation::BlendingJob blend_job;
+          blend_job.threshold = 0.1;
+          blend_job.layers = ozz::make_span(layers);
+          blend_job.rest_pose = character.skeleton_->joint_rest_poses();
+          blend_job.output = ozz::make_span(character.locals_);
+
+          // Blends.
+          if (!blend_job.Run())
+          {
+              debug_error("blend_job failed");
+              continue;
+          }
+      }
+      else if (character.currentAnimation)
       {
           if (!character.pause)
           {
@@ -149,23 +241,23 @@ void game_update()
               {
                   if (character.animPLaybackSpeed < 0)
                   {
-                      if (character.animTime < 0)
-                          character.animTime = character.currentAnimation->duration();
+                      if (character.ratio < 0)
+                          character.ratio = 1.0f;
                   }
                   else
                   {
-                      if (character.animTime >= character.currentAnimation->duration())
-                          character.animTime = 0;
+                      if (character.ratio >= 1.0f)
+                          character.ratio = 0.0f;
                   }
               }
-              character.animTime += get_delta_time() * character.animPLaybackSpeed;
+              character.ratio += get_delta_time() * character.animPLaybackSpeed / character.currentAnimation->duration();
           }
              
           // Samples optimized animation at t = animation_time_.
           ozz::animation::SamplingJob sampling_job;
           sampling_job.animation = character.currentAnimation.get();
           sampling_job.context = character.context_.get();
-          sampling_job.ratio = character.animTime / character.currentAnimation->duration();
+          sampling_job.ratio = character.ratio;
           sampling_job.output = ozz::make_span(character.locals_);
           if (!sampling_job.Run())
           {
@@ -302,7 +394,25 @@ void render_imguizmo(ImGuizmo::OPERATION& mCurrentGizmoOperation, ImGuizmo::MODE
     }
     ImGui::End();
 }
-
+static AnimationPtr animation_list_combo()
+{
+    std::vector<const char*> animations(animationList.size() + 1);
+    animations[0] = "None";
+    for (size_t i = 0; i < animationList.size(); i++)
+        animations[i + 1] = animationList[i].c_str();
+    static int item = 0;
+    if (ImGui::Combo("", &item, animations.data(), animations.size()))
+    {
+        if (item > 0)
+        {
+            SceneAsset sceneAsset = load_scene(animations[item],
+                SceneAsset::LoadScene::Skeleton | SceneAsset::LoadScene::Animation);
+            if (!sceneAsset.animations.empty())
+                return sceneAsset.animations[0];
+        }
+    }
+    return nullptr;
+}
 void imgui_render()
 {
     ImGuizmo::BeginFrame();
@@ -322,36 +432,60 @@ void imgui_render()
 
         if (ImGui::Begin("Animation list"))
         {
-            std::vector<const char*> animations(animationList.size() + 1);
-            animations[0] = "None";
-            for (size_t i = 0; i < animationList.size(); i++)
-                animations[i + 1] = animationList[i].c_str();
-            static int item = 0;
-            if (ImGui::Combo(animations[item], &item, animations.data(), animations.size()))
+            if (ImGui::Button("Play animation"))
+                ImGui::OpenPopup("Select animation to play");
+            if (ImGui::BeginPopup("Select animation to play"))
             {
-                 AnimationPtr animation;
-                 if (item > 0)
-                 {
-                   SceneAsset sceneAsset = load_scene(animations[item],
-                                                      SceneAsset::LoadScene::Skeleton | SceneAsset::LoadScene::Animation);
-                   if (!sceneAsset.animations.empty())
-                     animation = sceneAsset.animations[0];
-                 }
-                 character.currentAnimation = animation;
-                 character.animTime = 0;
+                if (AnimationPtr animation = animation_list_combo())
+                {
+                    character.currentAnimation = animation;
+                    ImGui::CloseCurrentPopup();
+                }
+                ImGui::EndPopup();
+            }
+            if (ImGui::TreeNode("controller"))
+            {
+                ImGui::SliderFloat("Animation time", &character.ratio, 0.0f, 1.0f);
+                ImGui::Checkbox("Pause", &character.pause);
+                ImGui::Checkbox("Loop", &character.loop);
+                ImGui::SliderFloat("Playback speed", &character.animPLaybackSpeed, -3.0f, 3.0f);
+                ImGui::TreePop();
+            }
+
+            if (ImGui::Button("Add layer"))
+                ImGui::OpenPopup("Add layer to play");
+            if (ImGui::BeginPopup("Add layer to play"))
+            {
+                if (AnimationPtr animation = animation_list_combo())
+                {
+                    character.layers.emplace_back(character.skeleton_, animation);
+                    ImGui::CloseCurrentPopup();
+                }
+                ImGui::EndPopup();
+            }
+            for (size_t i = 0; i < character.layers.size(); i++)
+            {
+                AnimationLayer& layer = character.layers[i];
+                ImGui::PushID(i);
+                ImGui::Text("name: %s", layer.animation->name());
+                ImGui::Text("duration: %f", layer.animation->duration());
+                ImGui::SliderFloat("Weight", &layer.weight, 0.0f, 1.0f);
+
+                if (ImGui::TreeNode("controller"))
+                {
+                    ImGui::SliderFloat("Animation time", &layer.ratio, 0.0f, 1.0f);
+                    ImGui::Checkbox("Pause", &layer.pause);
+                    ImGui::Checkbox("Loop", &layer.loop);
+                    ImGui::SliderFloat("Playback speed", &layer.animPLaybackSpeed, -3.0f, 3.0f);
+                    ImGui::TreePop();
+                }
+                ImGui::PopID();
             }
         }
 
         ImGui::End();
 
-        if (ImGui::Begin("Animation settings"))
-        {
-            ImGui::Checkbox("Pause", &character.pause);
-            ImGui::Checkbox("Loop", &character.loop);
-            ImGui::SliderFloat("Playback speed", &character.animPLaybackSpeed, -3.0f, 3.0f);
-        }
 
-        ImGui::End();
         static ImGuizmo::OPERATION mCurrentGizmoOperation(ImGuizmo::TRANSLATE);
         static ImGuizmo::MODE mCurrentGizmoMode(ImGuizmo::WORLD);
         render_imguizmo(mCurrentGizmoOperation, mCurrentGizmoMode);
